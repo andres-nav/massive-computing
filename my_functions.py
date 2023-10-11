@@ -9,15 +9,15 @@ def tonumpyarray(
     return np.frombuffer(mp_arr.get_obj(), dtype=np.uint8)
 
 
-def initialize_pool(shared_array, srcimg, imgfilter):
+def initialize_pool(shared_array, img, filt):
     """
     This function defines the global variables that will be used in the
     filtering process.
 
-    INPUTS
-    shared_array : space where the threads will store the results
-    srcimg --> Array: image to be filtered
-    imgfilter --> Array: the filter we will apply to the image
+    Inputs:
+    shared_array: space where the threads will store the results
+    img: image to be filtered
+    filt: the filter we will apply to the image
 
     """
 
@@ -28,8 +28,8 @@ def initialize_pool(shared_array, srcimg, imgfilter):
     global my_filter  # --> the filter that is applied to the image
 
     # All the global variables that will be used in the filtering process are defined here:
-    image = srcimg
-    my_filter = imgfilter
+    image = img
+    my_filter = filt
     size = image.shape
     shared_space = shared_array
     shared_matrix = tonumpyarray(shared_space).reshape(size)
@@ -43,12 +43,11 @@ def filter_image(row):
     The image is also stored as a global variable, so that all the threads
     can access it.
 
-    INPUTS
+    Inputs:
     row --> integer: row of the image to be filtered
 
-    OUTPUT
-    Not a direct output, but after this function, one row of the original image
-    is filtered. The result is stored in the global shared_matrix using locks
+    Output:
+    The result is stored in the global shared_matrix using locks
     so that there are not race conditions.
 
     """
@@ -72,33 +71,17 @@ def filter_image(row):
 
     srow = image[row, :, :]  # The current row that is being filtered
 
-    if (
-        row > 1
-    ):  # The row is not close to the upper border -->  We can use the previous previous row
-        prevprow = image[row - 2, :, :]
-    else:  # The row is close to the upper border -->  We cannot use the previous previous row
-        prevprow = image[row, :, :]
+    prevrow_index = 2 if row >= 2 else 0
+    prevprow = image[row - prevrow_index, :, :]
 
-    if (
-        row > 0
-    ):  # The row is not close to the upper border -->  We can use the previous row
-        prow = image[row - 1, :, :]
-    else:  # The row is not close to the upper border -->  We can use the previous row
-        prow = image[row, :, :]
+    prow_index = 1 if row >= 1 else 0
+    prow = image[row - prow_index, :, :]
 
-    if row == (
-        rows - 1
-    ):  # The row is close to the lower border -->  We cannot use the next row
-        nrow = image[row, :, :]
-    else:  # The row is not close to the lower border -->  We can use the next row
-        nrow = image[row + 1, :, :]
+    nrow_index = 1 if row < rows - 1 else 0
+    nrow = image[row + nrow_index, :, :]
 
-    if row >= (
-        rows - 2
-    ):  # The row is close to the lower border -->  We cannot use the next next row
-        nextnrow = nrow
-    else:  # The row is not close to the lower border -->  We can use the next next row
-        nextnrow = image[row + 2, :, :]
+    nextnrow_index = 2 if row < rows - 2 else 0
+    nextnrow = image[row + nextnrow_index, :, :]
 
     frow = np.zeros_like(srow)  # We initialize the row where we will store the
     # results of the filtered pixels of the row
