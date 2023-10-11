@@ -9,7 +9,7 @@ def tonumpyarray(
     return np.frombuffer(mp_arr.get_obj(), dtype=np.uint8)
 
 
-def initialize_pool(shared_array, srcimg, imgfilter, lock):
+def initialize_pool(shared_array, srcimg, imgfilter):
     """
     This function defines the global variables that will be used in the
     filtering process.
@@ -18,14 +18,12 @@ def initialize_pool(shared_array, srcimg, imgfilter, lock):
     shared_array : space where the threads will store the results
     srcimg --> Array: image to be filtered
     imgfilter --> Array: the filter we will apply to the image
-    lock: the lock that will be used by a thread to modify the global memory
 
     """
 
     # All the global variables that will be used in the filtering process are initialized here:
     global shared_space  # --> reference space where the matrix with the results are stored
     global shared_matrix  # --> matrix where all the threads will write the filtered value of a pixel
-    global my_lock  # --> the lock that will use the threads to write in the global memory
     global image  # --> the image that to be filtered
     global my_filter  # --> the filter that is applied to the image
 
@@ -33,7 +31,6 @@ def initialize_pool(shared_array, srcimg, imgfilter, lock):
     image = srcimg
     my_filter = imgfilter
     size = image.shape
-    lock = my_lock
     shared_space = shared_array
     shared_matrix = tonumpyarray(shared_space).reshape(size)
 
@@ -58,8 +55,7 @@ def filter_image(row):
     # We first call all the global variables to be used  (defined in the Pool_init 1 function)
     global my_filter  # The filter to be applied
     global shared_space  # The space where to store the resulting value
-    global lock  # The lock to be used when storing the result
-    global image_  # The image to be filtered
+    global image  # The image to be filtered
 
     image = image
     (rows, cols, depth) = image.shape
@@ -339,7 +335,7 @@ def filter_image(row):
                     # We just multiply those pixels inside the filter size region
                     # For instance, if the filter is 3x3, the element matrix[0][0] is not used in the
                     # multiplication, since x and y are 1
-                    accu += matrix[row_ + x][col_ + y] * my_filter1[row_][col_]
+                    accu += matrix[row_ + x][col_ + y] * my_filter[row_][col_]
 
             frow[c, d] = accu
 
@@ -360,13 +356,11 @@ def image_filter(image, filter_mask, numprocessors, filtered_image):
 
     # In this function we are using Pool so that we map the function that
     # filters the image with the rows to be filtered in a multiprocess way.
-    lock = mp.Lock()
-
     image_rows = range(image.shape[0])  # 1st is the row
     with mp.Pool(
         processes=numprocessors,
         initializer=initialize_pool,
-        initargs=[filtered_image, image, filter_mask, lock],
+        initargs=[filtered_image, image, filter_mask],
     ) as p:
         p.map(filter_image, image_rows)
         p.close()
@@ -390,7 +384,6 @@ def filters_execution(
 
     filter_masks = [filter_mask1, filter_mask2]
     filtered_images = [filtered_image1, filtered_image2]
-    lock = mp.Lock()
 
     for i in range(len(filter_masks)):
         with mp.Process(
