@@ -381,22 +381,32 @@ def filters_execution(
     # As this function must wait for both processes to be finished, we have to be able to open
     # and close each of them. We are always doing this inside the function named image_filter
     # while calling the p.close() and p.join() methods
+    import math
+
+    proc = math.floor(numprocessors / 2)
 
     filter_masks = [filter_mask1, filter_mask2]
     filtered_images = [filtered_image1, filtered_image2]
 
     for i in range(len(filter_masks)):
-        with mp.Process(
+        p = mp.Process(
             target=image_filter,
-            args=(image, filter_masks[i], numprocessors / 2, filtered_images[i]),
-        ) as p:
-            p.start()
-            p.join()
+            args=(
+                image,
+                filter_masks[i],
+                proc,
+                filtered_images[i],
+            ),
+        )
+
+        p.start()
+        p.join()
 
 
 ##########################################################################################
 # ********** Functions to allow us understand how does Pool function work:     ************
 ##########################################################################################
+# They are not used in this work but they were useful to understand how Pools work
 
 import time
 from multiprocessing import Pool
