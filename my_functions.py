@@ -12,22 +12,21 @@ def tonumpyarray(
 def initialize_pool(shared_array, img, filt):
     """
     This function defines the global variables that will be used in the
-    filtering process.
+    filtering process, that is for each pool the global variables that will be used
 
     Inputs:
     shared_array: space where the threads will store the results
     img: image to be filtered
     filt: the filter we will apply to the image
-
     """
 
-    # All the global variables that will be used in the filtering process are initialized here:
-    global shared_space  # --> reference space where the matrix with the results are stored
-    global shared_matrix  # --> matrix where all the threads will write the filtered value of a pixel
-    global image  # --> the image that to be filtered
-    global my_filter  # --> the filter that is applied to the image
+    # global variables used
+    global shared_space  # reference space where the matrix with the results are stored
+    global shared_matrix  # matrix where all the threads will write the filtered value of a pixel
+    global image  # the image that to be filtered
+    global my_filter  # filter that is applied to the image
 
-    # All the global variables that will be used in the filtering process are defined here:
+    # assignment to the global variables
     image = img
     my_filter = filt
     size = image.shape
@@ -37,21 +36,15 @@ def initialize_pool(shared_array, img, filt):
 
 def filter_image(row):
     """
-    This function is in charge of filtering a row of the original image. It uses
-    the filter stored as a global variable, and depending on its size, will
-    consider 1,2,3,4 or 5 rows/columns to perform the multiplications.
-    The image is also stored as a global variable, so that all the threads
-    can access it.
+    Big function that does the filtering for each row given a specific filter depending of
+    it size from 1 to 5 rows or columns. It will used locks to be able to write to the global
+    variable in a secure way.
 
     Inputs:
-    row --> integer: row of the image to be filtered
-
-    Output:
-    The result is stored in the global shared_matrix using locks
-    so that there are not race conditions.
-
+    row --> row of the image to be filtered (row array of the image)
     """
-    # We first call all the global variables to be used  (defined in the Pool_init 1 function)
+
+    # We first call all the global variables to be used
     global my_filter  # The filter to be applied
     global shared_space  # The space where to store the resulting value
     global image  # The image to be filtered
@@ -60,33 +53,32 @@ def filter_image(row):
     (rows, cols, depth) = image.shape
     (filter_rows, filter_cols) = my_filter.shape
 
-    # Firstly, in order to develop an algorithm capable of filtering an image no
-    # matter of what size the filter has (could be 1, 3, 5 x 1, 3, 5), we came to
-    # the conclusion that the best idea was to consider the largest possible
-    # filter size, and prior to the matrix multiplication process substitute by
-    # 0s those parts that were left out of our filter regarding its size.
-    # Therefore, we now compute the filtering area as if the filter was 5x5. To
-    # do this, we need to find the two previous and next rows of with respect to
-    # the row being filtered.
+    # In order to adapt the function to be able to use filters from 1 to 5 rows/columns
+    # we came to the idea that the best way was to consider the largest possible filter
+    # size. Before multipling the filter we adapt each filter to perform the multiplication
+    # appropiatly.
 
     srow = image[row, :, :]  # The current row that is being filtered
 
+    # top row given a 5x5 filter
     prevrow_index = 2 if row >= 2 else 0
     prevprow = image[row - prevrow_index, :, :]
 
+    # second row given a 5x5 filter
     prow_index = 1 if row >= 1 else 0
     prow = image[row - prow_index, :, :]
 
+    # forth row given a 5x5 filter
     nrow_index = 1 if row < rows - 1 else 0
     nrow = image[row + nrow_index, :, :]
 
+    # last row given a 5x5 filter
     nextnrow_index = 2 if row < rows - 2 else 0
     nextnrow = image[row + nextnrow_index, :, :]
 
     frow = np.zeros_like(srow)  # We initialize the row where we will store the
-    # results of the filtered pixels of the row
 
-    # We first iterate through the dimensions and the thorugh all the pixels of the row
+    # We first iterate through the colors and then thorugh all the pixels of the row
     # Matrix will store the values of the pixels that will be used if the filter was 5x5
 
     for d in range(depth):
@@ -173,7 +165,7 @@ def filter_image(row):
                     )
                 )
 
-            elif c == (cols - 2):  # we are in the left border
+            elif c == (cols - 2):  # we are in the right border
                 matrix = np.array(
                     (
                         [
@@ -214,7 +206,7 @@ def filter_image(row):
                     )
                 )
 
-            elif c == (cols - 1):  # we are in the previous column of the left border
+            elif c == (cols - 1):  # we are in the second col of the right border
                 matrix = np.array(
                     (
                         [
@@ -298,36 +290,34 @@ def filter_image(row):
 
             # Now, once we have the largest posible matrix, depending on the filter
             # size, we will ignore some values so that they are not taken
-            # into account in the filtering process. In order to do that, we
-            # start multiplying
+            # into account in the filtering process. This is done because otherwise,
+            # the 1 and the 3 filtes will take a lot of time.
 
-            x = 0
-            y = 0  # Case when the filter is 5x5
+            x = 0  # Case when the filter is 5x5
             if filter_rows == 3:
                 x = 1  # Case when the filter is 3x...
+            elif filter_rows == 1:
+                x = 2  # Case when the filter is 1x...
+
+            y = 0  # Case when the filter is 5x5
             if filter_cols == 3:
                 y = 1  # Case when the filter is ...x3
-            if filter_rows == 1:
-                x = 2  # Case when the filter is 1x...
-            if filter_cols == 1:
+            elif filter_cols == 1:
                 y = 2  # Case when the filter is ...x1
 
             accu = 0
             for row_ in range(filter_rows):
                 for col_ in range(filter_cols):
-                    # We just multiply those pixels inside the filter size region
-                    # For instance, if the filter is 3x3, the element matrix[0][0] is not used in the
-                    # multiplication, since x and y are 1
+                    # Multiply those pixels inside the filter size region
                     accu += matrix[row_ + x][col_ + y] * my_filter[row_][col_]
 
             frow[c, d] = accu
 
     with shared_space.get_lock():
         shared_matrix[row, :, :] = frow
-        # We store the result in the global variable shared matrix
-        # To avoid race conditions, we use locks so that no more than one thread
-        # can modify the variable at the same time
-
+        # We store the result in the global variable shared matrix using locks
+        # to avoid race conditions as we are using multiple threads that will
+        # access that variable at the same time.
     return frow
 
 
